@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Đọc EPUB</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&family=Literata:opsz,wght@7..72,400;7..72,600&family=Be+Vietnam+Pro:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body class="t-sepia f-merriweather align-justify">
+<input type="file" id="file-input" accept=".epub">
+<div id="scroll-progress"></div>
+
+<!-- HEADER -->
+<div id="header">
+  <div id="header-title"></div>
+  <div id="header-chapter"></div>
+</div>
+
+<!-- READER -->
+<div id="reader-wrap">
+  <div id="reader-content">
+    <div id="empty-state">
+      <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      <h2>Đọc EPUB Online</h2>
+      <p>Nhấn nút bên dưới để chọn file .epub từ thiết bị của bạn.</p>
+      <button id="btn-open-big" onclick="$('file-input').click()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Chọn file EPUB
+      </button>
+      <p class="hint">Nếu deploy trên GitHub Pages, đặt file .epub cùng thư mục — app sẽ tự mở.</p>
+    </div>
+  </div>
+  <!-- chapter nav buttons at bottom of content -->
+  <div class="ch-nav" id="ch-nav">
+    <button class="ch-btn" id="ch-prev" onclick="loadChapter(book.ch-1)">‹ Chương trước</button>
+    <button class="ch-btn primary" id="ch-next" onclick="loadChapter(book.ch+1)">Chương sau ›</button>
+  </div>
+</div>
+
+<!-- SMART FABs -->
+<div class="fab" id="fab-up" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+</div>
+<div class="fab" id="fab-down" onclick="window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+</div>
+
+<!-- TOC BOTTOM SHEET -->
+<div id="toc-overlay" onclick="closeTOC()"></div>
+<div id="toc-panel">
+  <div id="toc-panel-handle"></div>
+  <div id="toc-panel-header">
+    <div id="toc-panel-title">Danh sách chương</div>
+    <input type="text" id="toc-search" placeholder="Nhấn vào để tìm chương" autocomplete="off">
+    <button id="toc-close" onclick="closeTOC()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div id="toc-list"></div>
+</div>
+
+<!-- SETTINGS BOTTOM SHEET -->
+<div id="settings-overlay" onclick="closeSettings()"></div>
+<div id="settings-panel">
+  <div id="settings-panel-handle"></div>
+  <div class="sp-title">Cài đặt đọc truyện</div>
+
+  <div class="sp-section">
+    <div class="sp-label">Giao diện</div>
+    <div class="color-swatches">
+      <div class="swatch active" data-theme="t-sepia" style="background:#f5f0e8;border:2px solid #d8d0be;" title="Sepia"></div>
+      <div class="swatch" data-theme="t-white" style="background:#ffffff;border:2px solid #ddd;" title="Trắng"></div>
+      <div class="swatch" data-theme="t-black" style="background:#141414;" title="Đen"></div>
+      <div class="swatch" data-theme="t-brown" style="background:#c8a878;" title="Nâu"></div>
+      <div class="swatch" data-theme="t-dark-gray" style="background:#2e2e2e;" title="Xám đậm"></div>
+      <div class="swatch" data-theme="t-blue" style="background:#e8f0f8;border:2px solid #c0d0e0;" title="Xanh nhạt"></div>
+      <div class="swatch" data-theme="t-green-light" style="background:#e8f5e8;border:2px solid #c0d8c0;" title="Xanh lá"></div>
+      <div class="swatch" data-theme="t-pink" style="background:#fdf0f5;border:2px solid #e8d0dc;" title="Hồng"></div>
+      <div class="swatch" data-theme="t-yellow" style="background:#fffde8;border:2px solid #e8e4c0;" title="Vàng"></div>
+    </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-label">Cỡ chữ: <span id="val-font">18px</span></div>
+    <div class="sp-row">
+      <button class="sp-btn" id="font-minus" style="font-size:18px">−</button>
+      <input type="range" id="sl-font" min="13" max="26" value="18">
+      <button class="sp-btn" id="font-plus" style="font-size:22px">+</button>
+    </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-label">Phông chữ</div>
+    <div class="font-scroll">
+      <button class="font-btn active" data-font="f-merriweather" style="font-family:'Merriweather',serif">Merriweather</button>
+      <button class="font-btn" data-font="f-lora" style="font-family:'Lora',serif">Lora</button>
+      <button class="font-btn" data-font="f-literata" style="font-family:'Literata',serif">Literata</button>
+      <button class="font-btn" data-font="f-bevietnam" style="font-family:'Be Vietnam Pro',sans-serif">Be Vietnam Pro</button>
+      <button class="font-btn" data-font="f-georgia" style="font-family:Georgia,serif">Georgia</button>
+      <button class="font-btn" data-font="f-times" style="font-family:'Times New Roman',serif">Times New Roman</button>
+    </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-label">Giãn dòng: <span id="val-line">1.9</span></div>
+    <div class="sp-row">
+      <span style="font-size:11px;color:var(--text3);font-family:'Be Vietnam Pro',sans-serif">Chặt</span>
+      <input type="range" id="sl-line" min="14" max="26" value="19" step="1">
+      <span style="font-size:11px;color:var(--text3);font-family:'Be Vietnam Pro',sans-serif">Rộng</span>
+    </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-label">Căn lề</div>
+    <div class="align-btns">
+      <button class="align-btn" data-align="align-left">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="12" y2="18"/></svg>
+        Căn trái
+      </button>
+      <button class="align-btn active" data-align="align-justify">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        Đều 2 bên
+      </button>
+    </div>
+  </div>
+
+  <div style="height:20px"></div>
+</div>
+
+<!-- BOTTOM NAV BAR -->
+<div id="bottombar">
+  <button class="bb-btn" id="bb-settings" onclick="openSettings()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Cài đặt
+  </button>
+  <button class="bb-btn" id="bb-prev" onclick="loadChapter(book.ch-1)" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Trước
+  </button>
+  <button class="bb-btn" id="bb-toc" onclick="openTOC()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="12" y2="18"/></svg>
+    Mục lục
+  </button>
+  <button class="bb-btn" id="bb-next" onclick="loadChapter(book.ch+1)" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+    Sau
+  </button>
+  <button class="bb-btn" id="bb-open" onclick="$('file-input').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Mở file
+  </button>
+</div>
+
+<script src="js/reader.js"></script>
+</body>
+</html>
