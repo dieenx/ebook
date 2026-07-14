@@ -74,7 +74,7 @@ async function loadEpub(file) {
 
   buildTOC();
   $('header').classList.add('visible');
-  $('empty-state')?.style && ($('empty-state').style.display = 'none');
+  $('empty-state').style.display = 'none';
   if(!(await restoreReadingProgress())) loadChapter(0);
 }
 
