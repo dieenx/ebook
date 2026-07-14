@@ -163,7 +163,6 @@ function closeSettings() { $('settings-panel').classList.remove('open'); $('sett
 
 // ── SCROLL & AUTO-HIDE & PROGRESS ──
 let _lastScrollY = 0;
-let _scrollHideTimer;
 
 const isDesktop = () => window.innerWidth >= 1024;
 
@@ -176,18 +175,11 @@ window.addEventListener('scroll', () => {
   const pct = maxScroll > 0 ? (cur / maxScroll) * 100 : 0;
   $('scroll-progress').style.width = pct + '%';
 
-  // auto-hide bars when scrolling down
+  // auto-hide bars when scrolling down, show when scrolling up
   if(Math.abs(delta) > 6) {
     const hiding = delta > 0 && cur > 100;
     $('header').classList.toggle('hidden-bar', hiding);
     $('bottombar').classList.toggle('hidden-bar', hiding);
-    clearTimeout(_scrollHideTimer);
-    if(hiding) {
-      _scrollHideTimer = setTimeout(() => {
-        $('header').classList.remove('hidden-bar');
-        $('bottombar').classList.remove('hidden-bar');
-      }, 2500);
-    }
   }
   _lastScrollY = cur;
 
