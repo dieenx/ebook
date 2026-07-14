@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Đọc EPUB</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&family=Literata:opsz,wght@7..72,400;7..72,600&family=Be+Vietnam+Pro:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/main.css">
 </head>
@@ -127,6 +129,16 @@
         Đều 2 bên
       </button>
     </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-label">Đồng bộ nhiều thiết bị</div>
+    <div class="sp-row">
+      <input type="text" id="sync-code-input" placeholder="Mã đồng bộ" autocomplete="off" style="flex:1">
+      <button class="sp-btn" id="sync-apply" onclick="applySyncCode()">Dùng mã này</button>
+    </div>
+    <p class="hint" id="sync-status" style="margin-top:6px">Chưa đồng bộ</p>
+    <p class="hint">Nhập mã trên thiết bị này để đồng bộ với thiết bị khác đã dùng cùng mã. Bỏ trống thì app tự tạo mã riêng, bấm để xem/copy mã hiện tại.</p>
   </div>
 
   <div style="height:20px"></div>
