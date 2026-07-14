@@ -75,7 +75,7 @@ async function loadEpub(file) {
   buildTOC();
   $('header').classList.add('visible');
   $('empty-state').style.display = 'none';
-  if(!(await restoreReadingProgress())) loadChapter(0);
+  if(!restoreReadingProgress()) loadChapter(0);
 }
 
 function resolveUrl(base, rel) {
@@ -158,26 +158,7 @@ function filterTOC(q) {
 $('toc-search').addEventListener('input', function() { filterTOC(this.value); });
 
 // ── SETTINGS PANEL ──
-function openSettings() {
-  showBars();
-  $('settings-panel').classList.add('open');
-  $('settings-overlay').classList.add('on');
-  $('sync-code-input').value = getSyncCode();
-  setSyncStatus(db ? 'Sẵn sàng đồng bộ' : 'Chưa cấu hình Firebase');
-}
-function applySyncCode() {
-  setSyncCode($('sync-code-input').value);
-  setSyncStatus('Đã đổi mã — đang tải tiến độ...');
-  if(book.chapters.length) {
-    loadProgressFromCloud().then(s => {
-      if(s && s.ch < book.chapters.length) {
-        loadChapter(s.ch);
-        setTimeout(() => window.scrollTo({top: s.top||0, behavior:'instant'}), 80);
-      }
-      setSyncStatus('Đã đồng bộ');
-    });
-  }
-}
+function openSettings() { showBars(); $('settings-panel').classList.add('open'); $('settings-overlay').classList.add('on'); }
 function closeSettings() { $('settings-panel').classList.remove('open'); $('settings-overlay').classList.remove('on'); }
 
 // ── SCROLL & AUTO-HIDE & PROGRESS ──
@@ -221,89 +202,21 @@ window.addEventListener('scroll', () => {
   window._saveTimer = setTimeout(saveReadingProgress, 2000);
 });
 
-// ── CLOUD SYNC (Firebase Firestore) ──
-// 1) Tạo project miễn phí tại https://console.firebase.google.com
-// 2) Vào Project settings > General > Your apps > Web app, copy config vào đây
-// 3) Vào Firestore Database > Create database > bật ở chế độ "test mode"
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-let db = null;
-try {
-  if(firebaseConfig.apiKey !== "YOUR_API_KEY" && window.firebase) {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-  }
-} catch(e) { console.warn('Firebase chưa sẵn sàng:', e); }
-
-function getSyncCode() {
-  let code = localStorage.getItem('sync_code');
-  if(!code) {
-    code = Math.random().toString(36).slice(2,6) + '-' + Math.random().toString(36).slice(2,6);
-    localStorage.setItem('sync_code', code);
-  }
-  return code;
-}
-function setSyncCode(code) {
-  code = (code||'').trim();
-  if(!code) return;
-  localStorage.setItem('sync_code', code);
-}
-
-let _cloudSaveTimer;
-function saveProgressToCloud(data) {
-  if(!db || !book.chapters.length) return;
-  clearTimeout(_cloudSaveTimer);
-  _cloudSaveTimer = setTimeout(() => {
-    const code = getSyncCode();
-    db.collection('reading_progress').doc(code).set({
-      [bookKey()]: { ...data, title: book.title }
-    }, { merge: true }).then(() => setSyncStatus('Đã đồng bộ'))
-      .catch(e => { console.warn('Lỗi đồng bộ:', e); setSyncStatus('Lỗi đồng bộ'); });
-  }, 1200);
-}
-
-async function loadProgressFromCloud() {
-  if(!db) return null;
-  try {
-    const code = getSyncCode();
-    const doc = await db.collection('reading_progress').doc(code).get();
-    if(doc.exists) return doc.data()[bookKey()] || null;
-  } catch(e) { console.warn('Lỗi tải đồng bộ:', e); }
-  return null;
-}
-
-function setSyncStatus(text) {
-  const el = document.getElementById('sync-status');
-  if(el) el.textContent = text;
-}
-
-// ── READING PROGRESS (localStorage + cloud) ──
+// ── READING PROGRESS (localStorage) ──
 function bookKey() { return 'r_' + book.title.slice(0,30); }
 function saveReadingProgress() {
   if(!book.chapters.length) return;
-  const data = {ch:book.ch, top:window.scrollY, savedAt: Date.now()};
-  try { localStorage.setItem(bookKey(), JSON.stringify(data)); } catch(e){}
-  saveProgressToCloud(data);
+  try { localStorage.setItem(bookKey(), JSON.stringify({ch:book.ch, top:window.scrollY})); } catch(e){}
 }
-async function restoreReadingProgress() {
-  let local = null;
-  try { local = JSON.parse(localStorage.getItem(bookKey())); } catch(e){}
-
-  const cloud = db ? await loadProgressFromCloud() : null;
-  let s = local;
-  if(cloud && (!local || (cloud.savedAt||0) > (local.savedAt||0))) s = cloud;
-
-  if(s && s.ch < book.chapters.length) {
-    loadChapter(s.ch);
-    setTimeout(() => { window.scrollTo({top: s.top||0, behavior:'instant'}); }, 80);
-    return true;
-  }
+function restoreReadingProgress() {
+  try {
+    const s = JSON.parse(localStorage.getItem(bookKey()));
+    if(s && s.ch < book.chapters.length) {
+      loadChapter(s.ch);
+      setTimeout(() => { window.scrollTo({top: s.top||0, behavior:'instant'}); }, 80);
+      return true;
+    }
+  } catch(e){}
   return false;
 }
 
