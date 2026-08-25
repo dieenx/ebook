@@ -1,6 +1,6 @@
 
 const $ = id => document.getElementById(id);
-let book = {title:'', chapters:[], ch:0};
+let book = {title:'', chapters:[], ch:0, zip:null};
 
 // ── FILE OPEN ──
 $('file-input').addEventListener('change', async e => {
@@ -9,9 +9,10 @@ $('file-input').addEventListener('change', async e => {
   e.target.value = '';
 });
 
-// ── EPUB PARSER ──
+// ── EPUB PARSER (chỉ đọc cấu trúc + TOC, KHÔNG giải nén nội dung chương) ──
 async function loadEpub(file) {
   const zip = await JSZip.loadAsync(file);
+  book.zip = zip;
   const cxml = await zip.file('META-INF/container.xml').async('text');
   const opfPath = cxml.match(/full-path="([^"]+\.opf)"/i)?.[1];
   if(!opfPath) throw new Error('Không tìm thấy OPF');
@@ -47,35 +48,21 @@ async function loadEpub(file) {
   }
 
   const spineIds = [...opf.querySelectorAll('spine itemref')].map(r => r.getAttribute('idref'));
+
+  // Chỉ lưu href + tên chương (nếu có từ TOC). Nội dung (html, ảnh base64)
+  // sẽ được giải nén "lười" trong extractChapter() — chương nào đọc tới mới giải nén,
+  // giống YouTube buffer video theo đoạn thay vì tải/parse hết một lần.
   book.chapters = [];
   for(const id of spineIds) {
     const item = items[id]; if(!item) continue;
-    try {
-      const raw = await zip.file(item.href).async('text');
-      const doc = new DOMParser().parseFromString(raw, 'text/html');
-      for(const img of doc.querySelectorAll('img')) {
-        const src = img.getAttribute('src') || '';
-        if(!src || src.startsWith('data:')) continue;
-        const p = resolveUrl(item.href, src);
-        const f2 = zip.file(p) || zip.file(decodeURIComponent(p));
-        if(f2) {
-          try {
-            const b = await f2.async('base64');
-            const ext = p.split('.').pop().toLowerCase();
-            img.setAttribute('src', `data:${ext==='png'?'image/png':ext==='svg'?'image/svg+xml':'image/jpeg'};base64,${b}`);
-          } catch(e){}
-        }
-      }
-      const title = tocT[item.href] || doc.querySelector('title,h1,h2')?.textContent?.trim() || `Chương ${book.chapters.length+1}`;
-      book.chapters.push({title, html: doc.body?.innerHTML||''});
-    } catch(e){ console.warn('skip', item.href); }
+    book.chapters.push({ href: item.href, title: tocT[item.href] || null, html: null, loading: null });
   }
   if(!book.chapters.length) throw new Error('Không có nội dung');
 
   buildTOC();
   $('header').classList.add('visible');
   $('empty-state').style.display = 'none';
-  if(!restoreReadingProgress()) loadChapter(0);
+  if(!(await restoreReadingProgress())) await loadChapter(0);
 }
 
 function resolveUrl(base, rel) {
@@ -85,24 +72,83 @@ function resolveUrl(base, rel) {
   return p.join('/');
 }
 
+// ── GIẢI NÉN 1 CHƯƠNG (LAZY) ──
+// Chỉ chạy khi thực sự cần hiện chương đó. Kết quả được cache lại trong book.chapters[idx].
+async function extractChapter(idx) {
+  const ch = book.chapters[idx];
+  if(!ch) return null;
+  if(ch.html !== null) return ch;       // đã giải nén rồi, dùng luôn
+  if(ch.loading) return ch.loading;     // đang giải nén dở, chờ chung 1 promise (tránh chạy trùng)
+
+  ch.loading = (async () => {
+    try {
+      const raw = await book.zip.file(ch.href).async('text');
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      for(const img of doc.querySelectorAll('img')) {
+        const src = img.getAttribute('src') || '';
+        if(!src || src.startsWith('data:')) continue;
+        const p = resolveUrl(ch.href, src);
+        const f2 = book.zip.file(p) || book.zip.file(decodeURIComponent(p));
+        if(f2) {
+          try {
+            const b = await f2.async('base64');
+            const ext = p.split('.').pop().toLowerCase();
+            img.setAttribute('src', `data:${ext==='png'?'image/png':ext==='svg'?'image/svg+xml':'image/jpeg'};base64,${b}`);
+          } catch(e){}
+        }
+      }
+      if(!ch.title) ch.title = doc.querySelector('title,h1,h2')?.textContent?.trim() || `Chương ${idx+1}`;
+      ch.html = doc.body?.innerHTML || '';
+      updateTOCTitle(idx);
+    } catch(e) {
+      console.warn('skip', ch.href, e);
+      ch.title = ch.title || `Chương ${idx+1}`;
+      ch.html = '<p><em>(Không thể tải nội dung chương này)</em></p>';
+    }
+    ch.loading = null;
+    return ch;
+  })();
+
+  return ch.loading;
+}
+
+function updateTOCTitle(idx) {
+  const el = $('toc-list').children[idx];
+  if(el && book.chapters[idx]) el.textContent = book.chapters[idx].title;
+}
+
+// ── PREFETCH NỀN: tải trước vài chương kế tiếp lúc rảnh, như buffer video ──
+const PREFETCH_AHEAD = 4;
+function schedulePrefetch(fromIdx) {
+  for(let i=1; i<=PREFETCH_AHEAD; i++) {
+    const idx = fromIdx + i;
+    if(idx < book.chapters.length && book.chapters[idx].html === null) {
+      const run = () => extractChapter(idx);
+      if('requestIdleCallback' in window) requestIdleCallback(run, {timeout: 2000});
+      else setTimeout(run, 250 * i);
+    }
+  }
+}
+
 function buildTOC() {
   $('toc-list').innerHTML = '';
   book.chapters.forEach((ch, i) => {
     const d = document.createElement('div');
     d.className = 'toc-item';
-    d.textContent = ch.title;
+    d.textContent = ch.title || `Chương ${i+1}`;
     d.onclick = () => loadChapter(i);
     $('toc-list').appendChild(d);
   });
 }
 
-function loadChapter(idx) {
+async function loadChapter(idx) {
   if(idx < 0 || idx >= book.chapters.length) return;
   book.ch = idx;
-  $('reader-content').innerHTML = book.chapters[idx].html;
+
+  $('reader-content').innerHTML = '<p class="chapter-loading">Đang tải…</p>';
   window.scrollTo({top:0,behavior:'instant'});
   _lastScrollY = 0;
-  $('header-chapter').textContent = book.chapters[idx].title;
+  $('header-chapter').textContent = book.chapters[idx].title || `Chương ${idx+1}`;
 
   // always close TOC when a chapter is selected
   closeTOC();
@@ -126,6 +172,13 @@ function loadChapter(idx) {
 
   showBars();
   saveReadingProgress();
+
+  const ch = await extractChapter(idx);
+  if(book.ch !== idx) return; // người dùng đã bấm chương khác trong lúc chờ giải nén
+  $('reader-content').innerHTML = ch.html;
+  $('header-chapter').textContent = ch.title;
+
+  schedulePrefetch(idx);
 }
 
 // ── TOC PANEL ──
@@ -208,11 +261,11 @@ function saveReadingProgress() {
   if(!book.chapters.length) return;
   try { localStorage.setItem(bookKey(), JSON.stringify({ch:book.ch, top:window.scrollY})); } catch(e){}
 }
-function restoreReadingProgress() {
+async function restoreReadingProgress() {
   try {
     const s = JSON.parse(localStorage.getItem(bookKey()));
     if(s && s.ch < book.chapters.length) {
-      loadChapter(s.ch);
+      await loadChapter(s.ch);
       setTimeout(() => { window.scrollTo({top: s.top||0, behavior:'instant'}); }, 80);
       return true;
     }
